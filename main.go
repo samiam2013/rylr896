@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/albenik/go-serial"
 	"github.com/sirupsen/logrus"
 )
@@ -16,9 +18,19 @@ func main() {
 	if err != nil {
 		logrus.WithError(err).Error("failed to open /dev/serial0")
 	}
+	defer func() {
+		err := port.Close()
+		if err != nil {
+			logrus.WithError(err).Error("Could not close serial port")
+		}
+	}()
 
-	// TODO break this into it's own function?
-	n, err := port.Write([]byte("AT\r\n"))
+	logrus.Infof("response:'%v'", sendCommand(port, "AT"))
+	logrus.Infof("response:'%v'", sendCommand(port, "AT+IPR?"))
+}
+
+func sendCommand(p serial.Port, cmd string) string {
+	n, err := p.Write([]byte(cmd + "\r\n"))
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to send message")
 	}
@@ -27,17 +39,19 @@ func main() {
 	response := make([]byte, 1000)
 	for {
 		buf := make([]byte, 100)
-		n, err := port.Read(buf)
+		n, err := p.Read(buf)
 		if err != nil {
+			if strings.Contains(err.Error(), "interrupted") {
+				continue
+			}
 			logrus.WithError(err).Error("Could not read port")
 			break
 		}
 		if n == 0 {
-			logrus.Info("EOF")
+			logrus.Info("EOM")
 			break
 		}
 		response = append(response, buf...)
 	}
-	logrus.Infof("response:'%v'", string(response))
-
+	return string(response)
 }
