@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,9 +37,9 @@ func main() {
 	// TODO ? check if the response ^ to that was '+OK'
 
 	cmds := []string{
-		"AT+PARAMETER=10,2,1,7",
+		"AT+PARAMETER=12,2,2,7",
 		"AT+BAND=432500000", // 902300000,
-		"AT+ADDRESS=1",
+		"AT+ADDRESS=2",
 		"AT+NETWORKID=6",
 		"AT+CRFOP=15",
 	}
@@ -57,7 +59,11 @@ func main() {
 	if err := whiteLED.Out(gpio.Low); err != nil {
 		logrus.WithError(err).Fatalf("Failed to init white LED low")
 	}
-
+	const pattern = `\+RCV=(?P<from>[\d]+),(?P<length>[\d]+),(?P<message>.*),(?P<rssi>[\-\d]+),(?P<snr>[\d]+)`
+	rcvRe, err := regexp.Compile(pattern)
+	if err != nil {
+		logrus.WithError(err).Fatal("Could not compile recieved message regular expression.")
+	}
 	for {
 		if n, err := port.ReadyToRead(); n > 0 && err == nil {
 			time.Sleep(time.Millisecond * 20)
@@ -78,8 +84,21 @@ func main() {
 				logrus.WithError(err).Error("Could not get GPS waypoint")
 			}*/
 			// TODO remove the newline that's being printed here ?
-			//logrus.Infof("Data from port: %s (lat: %f, lon: %f, unix_micro: %d)",
+			sReadBuf := strings.TrimRight(string(readBuf), "\r\n")
 			//	string(readBuf), wp.Latitude, wp.Longitude, wp.UnixMicroTime)
+
+			rcvMatches := rcvRe.FindStringSubmatch(sReadBuf)
+			if len(rcvMatches) > 0 {
+				logrus.Infof("Recieved message: %s", sReadBuf) //(lat: %f, lon: %f, unix_micro: %d)",
+				rssiIdx := rcvRe.SubexpIndex("rssi")
+				rssi := rcvMatches[rssiIdx]
+				//logrus.Warn("putting message on screen? rssi:", rssi)
+				if err := exec.Command("./main.py", "--rssi="+rssi, "--persist=5", "--last=0m0s").Run(); err != nil {
+					logrus.WithError(err).Error("Could not print to display with python script.")
+				}
+				//logrus.Infof("response from python script: %s", string(resp))
+			}
+
 			whiteLED.Out(gpio.High)
 			time.Sleep(250 * time.Millisecond)
 			whiteLED.Out(gpio.Low)
@@ -97,11 +116,11 @@ func main() {
 // }
 
 func sendCommand(p serial.Port, cmd string) string {
-	n, err := p.Write([]byte(cmd + "\r\n"))
+	_, err := p.Write([]byte(cmd + "\r\n"))
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to send message")
 	}
-	logrus.Infof("Sent %v bytes: '%s'\n", n, cmd)
+	// logrus.Infof("Sent %v bytes: '%s'\n", n, cmd)
 
 	response := make([]byte, 0)
 	var n2 uint32
@@ -111,7 +130,7 @@ func sendCommand(p serial.Port, cmd string) string {
 		if err != nil {
 			logrus.WithError(err).Error("Could not read response to command.")
 		} else if n2 > 0 && lastIter == n2 {
-			logrus.Infof("bytes for reading: %d", n2)
+			//logrus.Infof("bytes for reading: %d", n2)
 			break
 		}
 		time.Sleep(20 * time.Millisecond) // TODO can this be removed
@@ -127,7 +146,7 @@ func sendCommand(p serial.Port, cmd string) string {
 			break
 		}
 		if n == 0 {
-			logrus.Info("EOM")
+			//logrus.Info("EOM")
 			break
 		}
 		response = append(response, buf...)
