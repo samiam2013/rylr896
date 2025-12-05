@@ -11,7 +11,7 @@ require (
 require (
 	github.com/adrianmo/go-nmea v1.7.0
 	github.com/creack/goselect v0.1.0 // indirect
-	github.com/sirupsen/logrus v1.8.1
+	github.com/sirupsen/logrus v1.8.3
 	go.uber.org/atomic v1.4.0 // indirect
 	go.uber.org/multierr v1.1.0 // indirect
 	golang.org/x/sys v0.1.0 // indirect
